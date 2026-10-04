@@ -198,14 +198,15 @@ function lineColumn (source: string, offset: number): { line: number, column: nu
 
 function resolveScalar (
   schema: Schema,
-  source: string,
+  input: string,
+  value: string,
   event: ScalarEvent,
   tagHandlers: TagHandlers
 ): ScalarResolution {
   const explicit = event.tagStart !== NO_RANGE
 
   if (explicit) {
-    const rawTag = source.slice(event.tagStart, event.tagEnd)
+    const rawTag = input.slice(event.tagStart, event.tagEnd)
 
     // `!` is the non-specific tag: it forces !!str for plain scalars.
     if (rawTag === '!') {
@@ -213,8 +214,8 @@ function resolveScalar (
       return {
         tag: shortTagName(tag.tagName),
         tagName: tag.tagName,
-        value: source,
-        canonical: canonicalValue(source),
+        value,
+        canonical: canonicalValue(value),
         explicit: true,
         ok: true
       }
@@ -224,7 +225,7 @@ function resolveScalar (
     const scalarTag = schema.lookupScalarTag(tagName)
 
     if (scalarTag) {
-      const result = scalarTag.resolve(source, true, tagName)
+      const result = scalarTag.resolve(value, true, tagName)
 
       if (result === NOT_RESOLVED) {
         return {
@@ -248,7 +249,7 @@ function resolveScalar (
     }
 
     // An empty scalar with a collection tag means an empty collection.
-    if (source === '') {
+    if (value === '') {
       const collectionTag =
         schema.lookupMappingTag(tagName) ??
         schema.lookupSequenceTag(tagName)
@@ -276,12 +277,12 @@ function resolveScalar (
   }
 
   if (event.style === SCALAR_STYLE.PLAIN) {
-    const { value, tag } = schema.resolveImplicitScalarTag(source)
+    const { value: resolved, tag } = schema.resolveImplicitScalarTag(value)
     return {
       tag: shortTagName(tag.tagName),
       tagName: tag.tagName,
-      value,
-      canonical: canonicalValue(value),
+      value: resolved,
+      canonical: canonicalValue(resolved),
       explicit: false,
       ok: true
     }
@@ -292,8 +293,8 @@ function resolveScalar (
   return {
     tag: 'str',
     tagName: tag.tagName,
-    value: source,
-    canonical: canonicalValue(source),
+    value,
+    canonical: canonicalValue(value),
     explicit: false,
     ok: true
   }
@@ -379,9 +380,9 @@ function auditSchemaMigration (input: string, options: AuditOptions = {}): Audit
       ? source.slice(event.tagStart, event.tagEnd)
       : null
 
-    const core = resolveScalar(schemas.core, value, event, tagHandlers)
-    const json = resolveScalar(schemas.json, value, event, tagHandlers)
-    const yaml11 = resolveScalar(schemas.yaml11, value, event, tagHandlers)
+    const core = resolveScalar(schemas.core, source, value, event, tagHandlers)
+    const json = resolveScalar(schemas.json, source, value, event, tagHandlers)
+    const yaml11 = resolveScalar(schemas.yaml11, source, value, event, tagHandlers)
 
     if (!core.ok || !json.ok || !yaml11.ok) {
       errors.push({

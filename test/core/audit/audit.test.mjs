@@ -74,12 +74,24 @@ describe('auditSchemaMigration', () => {
     const strResult = auditSchemaMigration('a: !!str yes\n', { filename: 'cfg.yaml' })
     assert.equal(strResult.scalarFindings.length, 0)
 
-    const boolResult = auditSchemaMigration('a: !!bool yes\n', { filename: 'cfg.yaml' })
+    const boolResult = auditSchemaMigration('a: !!bool true\n', { filename: 'cfg.yaml' })
     assert.equal(boolResult.scalarFindings.length, 0)
 
     const badResult = auditSchemaMigration('a: !!int yes\n', { filename: 'cfg.yaml' })
     assert.equal(badResult.errors.length, 1)
     assert.equal(badResult.errors[0].path, '$.a')
+  })
+
+  it('reports when an explicit tag is rejected by one schema but not others', () => {
+    // !!bool yes is accepted by core and yaml11 but rejected by json
+    const result = auditSchemaMigration('a: !!bool yes\n', { filename: 'cfg.yaml' })
+
+    assert.equal(result.errors.length, 1)
+    assert.equal(result.errors[0].path, '$.a')
+    assert.equal(result.scalarFindings.length, 1)
+    assert.equal(result.scalarFindings[0].core.tag, 'bool')
+    assert.equal(result.scalarFindings[0].json.ok, false)
+    assert.equal(result.scalarFindings[0].yaml11.tag, 'bool')
   })
 
   it('compares null variants across schemas', () => {
