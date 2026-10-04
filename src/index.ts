@@ -107,6 +107,23 @@ export {
   type AliasNode
 } from './ast/nodes.ts'
 
+export {
+  auditSchemaMigration,
+  formatAuditReport,
+  shortTagName,
+  canonicalValue,
+  keyIdentity,
+  SCHEMA_NAMES,
+  type AuditOptions,
+  type AuditResult,
+  type ScalarFinding,
+  type AliasFinding,
+  type KeyConflictFinding,
+  type KeyConflictEntry,
+  type AuditError,
+  type ScalarResolution
+} from './audit.ts'
+
 // Deprecated compatibility exports
 
 import { EVENT_ID, SCALAR_STYLE, COLLECTION_STYLE, CHOMPING_MODE } from './parser/events.ts'
