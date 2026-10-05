@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- `loadJson()`: an explicit JSON-compatible loading entry. It uses the
+  built-in JSON schema only, rejects non-string mapping keys before the
+  mapping is constructed (with the key tag and position in the error mark),
+  rejects reference cycles, expands shared acyclic references into
+  independent copies, and rejects non-finite numbers. No custom tag
+  constructors are invoked and violations never return a partial result.
+  Plain `load()` behavior is unchanged.
+
+
 ## [5.4.2] - 2026-09-13
 
 ### Fixed

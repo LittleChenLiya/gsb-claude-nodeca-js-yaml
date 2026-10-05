@@ -47,7 +47,14 @@ export { realMapTag } from './tag/mapping/real_map.ts'
 export { legacyMapTag } from './tag/mapping/legacy_map.ts'
 export { setTag } from './tag/mapping/set.ts'
 
-export { load, loadAll, type LoadOptions } from './load.ts'
+export {
+  load,
+  loadJson,
+  loadAll,
+  type LoadOptions,
+  type LoadJsonOptions,
+  type JsonValue
+} from './load.ts'
 export { dump, type DumpOptions } from './dump.ts'
 export { YAMLException } from './common/exception.ts'
 

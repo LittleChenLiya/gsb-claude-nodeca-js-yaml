@@ -101,6 +101,39 @@ try {
 This is not the default because objects without a prototype break many common
 usage examples and equality checks. Still, consider using `realMapTag` instead.
 
+### JSON-compatible load
+
+`loadJson()` parses a single document with the built-in JSON schema only and
+guarantees a result that `JSON.stringify` accepts. Non-string mapping keys are
+rejected before the mapping is built (the error mark points at the key and
+names its resolved tag, e.g. `!!int`), reference cycles are rejected, shared
+acyclic references are expanded into independent copies, and non-finite
+numbers (`.inf`, `-.inf`, `.nan`) are rejected. Custom tags are never
+constructed, and any violation throws without returning a partial result.
+
+```javascript
+import { loadJson } from 'js-yaml'
+
+// 1) String keys (including the text "1") pass; numbers do not:
+loadJson('"1": ok')   // { '1': 'ok' }
+loadJson('1: ok')     // throws: mapping keys must be strings ... got !!int key (1:1)
+
+// 2) A shared, acyclic anchor expands into independent copies:
+const shared = loadJson('a: &x [1, 2]\nb: *x\n')
+shared.a === shared.b  // false — each alias is its own copy
+
+// 3) Self references and non-finite floats are refused:
+loadJson('a: &a [1, *a]')  // throws: recursive alias "a" is not representable in JSON
+loadJson('a: !!float .inf') // throws: non-finite value of tag !!float ...
+```
+
+Local Node one-liner (Node strips TypeScript types when importing the
+sources directly, so no build step is needed):
+
+```shell
+node --input-type=module -e "import { loadJson } from './src/load.ts'; console.log(JSON.stringify(loadJson('a: &x [1, 2]\nb: *x\n')))"
+```
+
 ## Dump
 
 ### Basic usage
