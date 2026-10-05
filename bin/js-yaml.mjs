@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs'
 import argparse from 'argparse'
-import { loadAll, dump } from 'js-yaml'
+import { loadAll, loadJSONAll, dump } from 'js-yaml'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)))
 
@@ -23,10 +23,11 @@ cli.add_argument('-c', '--compact', {
   action: 'store_true'
 })
 
-// deprecated (not needed after we removed output colors)
-// option suppressed, but not completely removed for compatibility
-cli.add_argument('-j', '--to-json', {
-  help: argparse.SUPPRESS,
+// Force JSON-compatible YAML loading: skip the JSON.parse attempt and use the
+// strict, built-in safe schema loader. `-j` is kept as an alias for the former
+// `--to-json` flag.
+cli.add_argument('-j', '--json', {
+  help: 'Load the input as JSON-compatible YAML (strict, built-in safe schema)',
   dest: 'json',
   action: 'store_true'
 })
@@ -75,31 +76,47 @@ try {
 let output
 let isYaml
 
-try {
-  output = JSON.parse(input)
-  isYaml = false
-} catch (err) {
-  if (err instanceof SyntaxError) {
-    try {
-      output = []
-      loadAll(input, (doc) => { output.push(doc) }, {})
-      isYaml = true
+if (options.json) {
+  // JSON-compatible YAML: strict loader, never a partial result.
+  try {
+    output = loadJSONAll(input)
+    isYaml = true
 
-      if (output.length === 0) output = null
-      else if (output.length === 1) output = output[0]
-    } catch (e) {
-      if (options.trace && err.stack) console.error(e.stack)
-      else console.error(e.toString(options.compact))
+    if (output.length === 0) output = null
+    else if (output.length === 1) output = output[0]
+  } catch (e) {
+    if (options.trace && e.stack) console.error(e.stack)
+    else console.error(e.toString(options.compact))
+
+    process.exit(1)
+  }
+} else {
+  try {
+    output = JSON.parse(input)
+    isYaml = false
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      try {
+        output = []
+        loadAll(input, (doc) => { output.push(doc) }, {})
+        isYaml = true
+
+        if (output.length === 0) output = null
+        else if (output.length === 1) output = output[0]
+      } catch (e) {
+        if (options.trace && err.stack) console.error(e.stack)
+        else console.error(e.toString(options.compact))
+
+        process.exit(1)
+      }
+    } else {
+      console.error(
+        (options.trace && err.stack) ||
+        err.message ||
+        String(err))
 
       process.exit(1)
     }
-  } else {
-    console.error(
-      (options.trace && err.stack) ||
-      err.message ||
-      String(err))
-
-    process.exit(1)
   }
 }
 

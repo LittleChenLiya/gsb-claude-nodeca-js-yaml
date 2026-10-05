@@ -91,6 +91,15 @@ interface ConstructorOptions {
   json?: boolean
 
   /**
+   * Enforces the strict subset of YAML that is representable as JSON: mapping
+   * keys must be strings, cyclic aliases are rejected, and non-finite numbers
+   * (`!!float .inf`, `!!float .nan`) are rejected. Used by the JSON loader.
+   *
+   * @defaultValue `false`
+   */
+  jsonStrict?: boolean
+
+  /**
    * Maximum total number of keys processed by merge (`<<`) across one load
    * call. Each member of a merge sequence also counts as one key. Set to `-1`
    * to disable the limit.
@@ -113,6 +122,7 @@ const DEFAULT_CONSTRUCTOR_OPTIONS: Required<Omit<ConstructorOptions, 'source'>> 
   filename: '',
   schema: CORE_SCHEMA,
   json: false,
+  jsonStrict: false,
   maxTotalMergeKeys: 10000,
   maxAliases: -1
 }
@@ -124,6 +134,9 @@ interface ConstructorState extends Required<ConstructorOptions> {
   position: number
   frames: Frame[]
   anchors: Map<string, Anchor>
+  // Collection anchors whose frame is still open. An alias to one of these
+  // closes a reference cycle, which JSON cannot represent.
+  openAnchors: Set<Anchor>
   // Mapping tag each sequence element was built with, keyed by the element
   // itself. Needed by `<<` merge, which sees only the finished element values.
   nodeTags: Map<unknown, MappingTagDefinition<any, any>>
@@ -173,49 +186,59 @@ function constructScalar (
     : state.source.slice(event.tagStart, event.tagEnd)
   const strTag = state.schema.defaultScalarTag
 
+  let resolved: ValueAndTag
+
   if (rawTag !== '') {
-    if (rawTag === '!') return { value: source, tag: strTag }
+    if (rawTag === '!') {
+      resolved = { value: source, tag: strTag }
+    } else {
+      const tagName = tagNameFull(rawTag, state.tagHandlers)
+      const scalarTag = state.schema.lookupScalarTag(tagName)
 
-    const tagName = tagNameFull(rawTag, state.tagHandlers)
-    const scalarTag = state.schema.lookupScalarTag(tagName)
+      if (scalarTag) {
+        const result = scalarTag.resolve(source, true, tagName)
 
-    if (scalarTag) {
-      const result = scalarTag.resolve(source, true, tagName)
+        if (result === NOT_RESOLVED) {
+          throwError(state, `cannot resolve a node with !<${tagName}> explicit tag`)
+        }
 
-      if (result === NOT_RESOLVED) {
-        throwError(state, `cannot resolve a node with !<${tagName}> explicit tag`)
+        resolved = { value: result, tag: scalarTag }
+      } else {
+        // An empty node carrying a collection tag (e.g. `!!map`, `!!seq`) is emitted
+        // by the parser as a scalar event, since there is no collection syntax to key
+        // off. Resolve it here by the explicit tag's kind into an empty collection.
+        const collectionTagDef =
+          state.schema.lookupMappingTag(tagName) ??
+          state.schema.lookupSequenceTag(tagName)
+
+        if (collectionTagDef) {
+          if (source !== '') {
+            throwError(state, `cannot resolve a node with !<${tagName}> explicit tag`)
+          }
+
+          const carrier = collectionTagDef.create(tagName)
+          const value = collectionTagDef.carrierIsResult
+            ? carrier
+            : finalizeCollection(state, state.position, collectionTagDef, carrier)
+          resolved = { value, tag: collectionTagDef }
+        } else {
+          throwError(state, `unknown scalar tag !<${tagName}>`)
+        }
       }
-
-      return { value: result, tag: scalarTag }
     }
-
-    // An empty node carrying a collection tag (e.g. `!!map`, `!!seq`) is emitted
-    // by the parser as a scalar event, since there is no collection syntax to key
-    // off. Resolve it here by the explicit tag's kind into an empty collection.
-    const collectionTagDef =
-      state.schema.lookupMappingTag(tagName) ??
-      state.schema.lookupSequenceTag(tagName)
-
-    if (collectionTagDef) {
-      if (source !== '') {
-        throwError(state, `cannot resolve a node with !<${tagName}> explicit tag`)
-      }
-
-      const carrier = collectionTagDef.create(tagName)
-      const value = collectionTagDef.carrierIsResult
-        ? carrier
-        : finalizeCollection(state, state.position, collectionTagDef, carrier)
-      return { value, tag: collectionTagDef }
-    }
-
-    throwError(state, `unknown scalar tag !<${tagName}>`)
+  } else if (event.style === SCALAR_STYLE.PLAIN) {
+    resolved = state.schema.resolveImplicitScalarTag(source)
+  } else {
+    resolved = { value: strTag.resolve(source, false, strTag.tagName), tag: strTag }
   }
 
-  if (event.style === SCALAR_STYLE.PLAIN) {
-    return state.schema.resolveImplicitScalarTag(source)
+  if (state.jsonStrict &&
+      typeof resolved.value === 'number' &&
+      !Number.isFinite(resolved.value)) {
+    throwError(state, 'non-finite numbers are not allowed in JSON')
   }
 
-  return { value: strTag.resolve(source, false, strTag.tagName), tag: strTag }
+  return resolved
 }
 
 function collectionTagName (
@@ -311,7 +334,7 @@ function addMappingValue (state: ConstructorState, frame: MappingFrame, key: unk
   frame.overridable?.delete(key)
 }
 
-function addValue (state: ConstructorState, value: unknown, tag: AnyTag) {
+function addValue (state: ConstructorState, value: unknown, tag: AnyTag, keyPosition: number = state.position) {
   const frame = state.frames[state.frames.length - 1]!
 
   if (frame.kind === 'document') {
@@ -329,8 +352,15 @@ function addValue (state: ConstructorState, value: unknown, tag: AnyTag) {
     frame.hasKey = false
     addMappingValue(state, frame, key, value, tag)
   } else {
+    // Reject non-string keys before `addPair` can stringify them: a numeric
+    // key must keep its type so the error points at the key tag, not at a
+    // silently converted `"1"`.
+    if (state.jsonStrict && typeof value !== 'string') {
+      state.position = keyPosition
+      throwError(state, 'JSON mapping keys must be strings')
+    }
     frame.key = value
-    frame.keyPosition = state.position
+    frame.keyPosition = keyPosition
     frame.hasKey = true
     frame.keyIsMerge = tag.tagName === MERGE_TAG_NAME
   }
@@ -372,6 +402,7 @@ function constructFromEvents (events: Event[], options: ConstructorOptions): unk
     position: 0,
     frames: [],
     anchors: new Map(),
+    openAnchors: new Set(),
     nodeTags: new Map(),
     tagHandlers: Object.create(null),
     totalMergeKeys: 0,
@@ -385,6 +416,7 @@ function constructFromEvents (events: Event[], options: ConstructorOptions): unk
     switch (event.type) {
       case EVENT_ID.DOCUMENT:
         state.anchors = new Map()
+        state.openAnchors = new Set()
         state.nodeTags = new Map()
         state.aliasCount = 0
         state.tagHandlers = Object.create(null)
@@ -408,6 +440,7 @@ function constructFromEvents (events: Event[], options: ConstructorOptions): unk
 
         const value = tag.create(tagName)
         const anchor = storeAnchor(state, event, value, tag, tag.carrierIsResult)
+        if (state.jsonStrict && anchor) state.openAnchors.add(anchor)
 
         state.frames.push({
           kind: 'sequence', position: state.position, value, tag, anchor, index: 0
@@ -422,6 +455,7 @@ function constructFromEvents (events: Event[], options: ConstructorOptions): unk
 
         const value = tag.create(tagName)
         const anchor = storeAnchor(state, event, value, tag, tag.carrierIsResult)
+        if (state.jsonStrict && anchor) state.openAnchors.add(anchor)
         state.frames.push({
           kind: 'mapping',
           position: state.position,
@@ -447,6 +481,9 @@ function constructFromEvents (events: Event[], options: ConstructorOptions): unk
         if (!anchor) {
           throwError(state, `unidentified alias "${name}"`)
         }
+        if (state.jsonStrict && state.openAnchors.has(anchor)) {
+          throwError(state, `cyclic alias "${name}" is not representable in JSON`)
+        }
         if (!anchor.isValueFinal) {
           throwError(state, `recursive alias "${name}" is not supported for tag ${anchor.tag.tagName} because it uses finalize()`)
         }
@@ -471,8 +508,9 @@ function constructFromEvents (events: Event[], options: ConstructorOptions): unk
           if (frame.anchor) {
             frame.anchor.value = value
             frame.anchor.isValueFinal = true
+            if (state.jsonStrict) state.openAnchors.delete(frame.anchor)
           }
-          addValue(state, value, frame.tag)
+          addValue(state, value, frame.tag, frame.position)
         }
         break
       }

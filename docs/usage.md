@@ -101,6 +101,36 @@ try {
 This is not the default because objects without a prototype break many common
 usage examples and equality checks. Still, consider using `realMapTag` instead.
 
+### JSON-compatible loading
+
+When data must round-trip through `JSON.stringify`, use `loadJSON()`. It uses
+only the built-in JSON Schema (custom tags are never called), rejects non-string
+mapping keys before they are stringified into keys, rejects reference cycles and
+non-finite numbers, and never returns a partial result:
+
+```javascript
+import { loadJSON } from 'js-yaml'
+
+// 1. String keys pass — the quoted "1" stays a string.
+loadJSON('"1": x') // { '1': 'x' }
+
+// 2. Numeric keys are rejected at the key tag and its line/column.
+loadJSON('1: x')
+// YAMLException: JSON mapping keys must be strings (1:1)
+
+// 3. Shared acyclic references are expanded; cycles are rejected.
+loadJSON('a: &x [1, 2]\nb: *x') // { a: [1, 2], b: [1, 2] }
+loadJSON('a: &x [1, *x]')
+// YAMLException: cyclic alias "x" is not representable in JSON (1:12)
+```
+
+`loadJSONAll()` is the multi-document variant. The same strict loader is
+available from the command line with `--json` (or `-j`):
+
+```shell
+npx js-yaml --json data.yml
+```
+
 ## Dump
 
 ### Basic usage
