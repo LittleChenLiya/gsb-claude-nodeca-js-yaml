@@ -143,3 +143,20 @@ export const CHOMPING_CLIP = CHOMPING_MODE.CLIP
 export const CHOMPING_STRIP = CHOMPING_MODE.STRIP
 /** @deprecated Use `CHOMPING_MODE.KEEP` instead. @internal */
 export const CHOMPING_KEEP = CHOMPING_MODE.KEEP
+
+export {
+  auditSchemaMigration,
+  COMPARED_SCHEMAS,
+  type AuditSchemaName,
+  type ScalarValueType,
+  type ScalarResolution,
+  type ScalarChangeKind,
+  type ScalarStyleName,
+  type ScalarRole,
+  type SourceLocation,
+  type ScalarAuditEntry,
+  type KeyConflictEntry,
+  type AliasAuditEntry,
+  type SchemaAuditReport,
+  type SchemaAuditOptions
+} from './audit.ts'

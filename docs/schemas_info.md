@@ -23,3 +23,7 @@ Additional Schemas:
 
 You will usually use one of the preferred schemas above and customize it with
 {@link Schema.withTags | Schema.withTags()}.
+
+Planning to migrate a configuration file from one schema to another? See
+[Schema migration audit](schema_audit.md) for the offline auditor that
+compares CORE, JSON and YAML 1.1 scalar resolution.
