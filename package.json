@@ -31,7 +31,8 @@
     "dist/"
   ],
   "bin": {
-    "js-yaml": "bin/js-yaml.mjs"
+    "js-yaml": "bin/js-yaml.mjs",
+    "js-yaml-stream": "bin/js-yaml-stream.mjs"
   },
   "main": "./dist/js-yaml.cjs.js",
   "module": "./dist/js-yaml.mjs",

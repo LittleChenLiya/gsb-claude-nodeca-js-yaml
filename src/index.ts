@@ -76,6 +76,13 @@ export {
   type ParserOptions
 } from './parser/parser.ts'
 
+export {
+  DocumentReader,
+  utf8ByteLength,
+  type DocumentReaderOptions,
+  type IncrementalDocument
+} from './parser/stream.ts'
+
 export { getScalarValue } from './parser/parser_scalar.ts'
 
 export {
