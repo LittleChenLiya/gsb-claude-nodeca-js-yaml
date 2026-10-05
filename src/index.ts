@@ -76,6 +76,13 @@ export {
   type ParserOptions
 } from './parser/parser.ts'
 
+export {
+  DocumentReader,
+  DEFAULT_MAX_DOCUMENT_BYTES,
+  type DocumentReaderOptions,
+  type DocumentSlice
+} from './parser/document_reader.ts'
+
 export { getScalarValue } from './parser/parser_scalar.ts'
 
 export {
